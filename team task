@@ -1,0 +1,119 @@
+# 1. Install Required Libraries
+!pip install sec-edgar-downloader yfinance requests transformers torch
+
+# 2. Import Dependencies
+import os
+import yfinance as yf
+import requests
+from sec_edgar_downloader import Downloader
+from transformers import GPT2LMHeadModel, GPT2Tokenizer, pipeline
+import pandas as pd
+from datetime import datetime, timedelta
+
+# 3. Configuration
+STOCKS = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", 
+         "META", "NVDA", "BRK-B", "V", "JNJ"]
+MAX_CONTEXT_LENGTH = 1024  # GPT-2's maximum context window
+MAX_NEW_TOKENS = 300       # Response length limit
+FMP_API_KEY = api_key_fmp
+YOUR_EMAIL = "your-email@example.com"
+
+# 4. Initialize Model with Proper Tokenization
+model = GPT2LMHeadModel.from_pretrained("gpt2")
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+tokenizer.pad_token = tokenizer.eos_token
+
+llm = pipeline(
+    "text-generation",
+    model=model,
+    tokenizer=tokenizer,
+    device=-1,  # Use CPU (0 for GPU)
+    pad_token_id=tokenizer.eos_token_id
+)
+
+# 5. Enhanced Data Collection with Input Truncation
+def get_truncated_text(text, max_tokens):
+    """Smart truncation for LLM context"""
+    tokens = tokenizer.encode(text, add_special_tokens=False)
+    return tokenizer.decode(tokens[:max_tokens], skip_special_tokens=True)
+
+def read_sec_filing(ticker):
+    """Read SEC filing with context management"""
+    try:
+        base_path = os.path.join("sec-edgar-filings", ticker, "10-K")
+        subdirs = [d for d in os.listdir(base_path) 
+                 if not d.startswith('.') and os.path.isdir(os.path.join(base_path, d))]
+        
+        if not subdirs:
+            return ""
+            
+        filing_path = os.path.join(base_path, subdirs[0], "full-submission.txt")
+        with open(filing_path, "r", encoding="utf-8", errors='ignore') as f:
+            full_text = f.read()
+            
+        # Reserve 40% of context for generation
+        max_input_tokens = int(MAX_CONTEXT_LENGTH * 0.6)
+        return get_truncated_text(full_text, max_input_tokens)
+    
+    except:
+        return ""
+
+# 6. Optimized Analysis Template
+ANALYSIS_TEMPLATE = """Analyze {ticker} stock:
+Price History (Last Close Values):
+{prices}
+
+Key Ratios:
+{ratios}
+
+SEC Filing Context:
+{sec_filing}
+
+Analysis Should Cover:
+1. Price trends - 2. Financial health - 3. Risks - 4. Recommendation"""
+
+# 7. Robust Analysis Generation
+def generate_analysis(ticker):
+    try:
+        # Collect and truncate data
+        prices = yf.Ticker(ticker).history(period="1mo")["Close"].tail(5).to_string()
+        ratios = "\n".join([f"{k}: {v}" for k,v in get_fundamental_ratios(ticker).items()][:3])
+        filing = read_sec_filing(ticker)
+        
+        # Create optimized prompt
+        prompt = ANALYSIS_TEMPLATE.format(
+            ticker=ticker,
+            prices=prices,
+            ratios=ratios,
+            sec_filing=filing
+        )
+        
+        # Calculate available context
+        input_length = len(tokenizer.encode(prompt, add_special_tokens=False))
+        available_tokens = MAX_CONTEXT_LENGTH - input_length - 10  # Buffer
+        
+        # Generate analysis
+        return llm(
+            prompt,
+            max_new_tokens=min(available_tokens, MAX_NEW_TOKENS),
+            temperature=0.7,
+            do_sample=True,
+            truncation=True
+        )[0]["generated_text"].replace(prompt, "")  # Remove input from output
+        
+    except Exception as e:
+        return f"Analysis failed: {str(e)}"
+
+# 8. Execute Pipeline
+if _name_ == "_main_":
+    print("Starting analysis...")
+    results = []
+    
+    for ticker in STOCKS:
+        print(f"Processing {ticker}...")
+        analysis = generate_analysis(ticker)
+        results.append({"Ticker": ticker, "Analysis": analysis})
+        print(f"✅ {ticker} completed")
+    
+    pd.DataFrame(results).to_csv("stock_analyses.csv", index=False)
+    print("\nAnalysis complete! Results saved to stock_analyses.csv")
