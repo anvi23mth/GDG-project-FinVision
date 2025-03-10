@@ -1,0 +1,58 @@
+import yfinance as yf
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# 📌 Step 1: Fetch BTC-USD Daily Closing Prices
+btc = yf.download("BTC-USD", period="1y", interval="1d")  # Last 1 year of data
+prices = btc["Close"].values  # Extract closing prices
+dates = btc.index  # Extract dates
+
+# 📌 Step 2: Compute Stock Span (O(n) using a Monotonic Stack)
+def calculate_stock_span(prices):
+    span = np.zeros(len(prices), dtype=int)
+    stack = []  # Stores (price, index) pairs
+
+    for i in range(len(prices)):
+        while stack and stack[-1][0] <= prices[i]:
+            stack.pop()
+        span[i] = (i - stack[-1][1]) if stack else (i + 1)
+        stack.append((prices[i], i))
+    
+    return span
+
+# Compute stock span values
+stock_span = calculate_stock_span(prices)
+
+# 📌 Step 3: Compute Moving Averages (50-day & 200-day)
+btc["MA_50"] = btc["Close"].rolling(window=50).mean()
+btc["MA_200"] = btc["Close"].rolling(window=200).mean()
+
+# 📌 Step 4: Identify Trend Confirmation & Breakouts
+btc["Trend"] = np.where(btc["MA_50"] > btc["MA_200"], "Uptrend", "Downtrend")
+
+# Detect sudden spikes in stock span (Potential Breakouts)
+btc["Breakout"] = np.where((stock_span > np.mean(stock_span) + 2 * np.std(stock_span)), "Yes", "No")
+
+# 📌 Step 5: Plot BTC Price, Stock Span & Moving Averages
+plt.figure(figsize=(14, 7))
+
+# BTC Price
+plt.plot(dates, prices, label="BTC-USD Price", color='blue', linewidth=1)
+# Stock Span (Scaled for Visualization)
+plt.plot(dates, stock_span * 100, label="Stock Span (Scaled)", color='red', linestyle='dashed', alpha=0.6)
+# Moving Averages
+plt.plot(dates, btc["MA_50"], label="50-day MA", color='green', linewidth=1)
+plt.plot(dates, btc["MA_200"], label="200-day MA", color='orange', linewidth=1)
+
+plt.xlabel("Date")
+plt.ylabel("Price / Span Value")
+plt.title("BTC-USD Stock Span & Trend Analysis")
+plt.legend()
+plt.grid()
+plt.show()
+
+# 📌 Step 6: Print Breakout Signals
+breakout_days = btc[btc["Breakout"] == "Yes"]
+print("\n🚀 Breakout Signals Detected on These Dates:")
+print(breakout_days[["Close", "Breakout"]])
