@@ -1,0 +1,100 @@
+import sys
+import numpy as np
+
+class SegmentTree:
+    def __init__(self, arr):
+        """Initialize segment tree for min & max queries"""
+        self.n = len(arr)
+        self.arr = arr
+        self.tree_min = np.full(4 * self.n, float('inf'))  # Min Segment Tree
+        self.tree_max = np.full(4 * self.n, float('-inf')) # Max Segment Tree
+        self._build(0, 0, self.n - 1)
+
+    def _build(self, node, start, end):
+        """Build segment tree for both min and max"""
+        if start == end:
+            self.tree_min[node] = self.arr[start]
+            self.tree_max[node] = self.arr[start]
+        else:
+            mid = (start + end) // 2
+            left, right = 2 * node + 1, 2 * node + 2
+            self._build(left, start, mid)
+            self._build(right, mid + 1, end)
+            self.tree_min[node] = min(self.tree_min[left], self.tree_min[right])
+            self.tree_max[node] = max(self.tree_max[left], self.tree_max[right])
+
+    def _query_min(self, node, start, end, L, R):
+        """Range Min Query (Support Level)"""
+        if R < start or L > end:
+            return float('inf')
+        if L <= start and end <= R:
+            return self.tree_min[node]
+        mid = (start + end) // 2
+        return min(self._query_min(2 * node + 1, start, mid, L, R),
+                   self._query_min(2 * node + 2, mid + 1, end, L, R))
+
+    def _query_max(self, node, start, end, L, R):
+        """Range Max Query (Resistance Level)"""
+        if R < start or L > end:
+            return float('-inf')
+        if L <= start and end <= R:
+            return self.tree_max[node]
+        mid = (start + end) // 2
+        return max(self._query_max(2 * node + 1, start, mid, L, R),
+                   self._query_max(2 * node + 2, mid + 1, end, L, R))
+
+    def _update(self, node, start, end, index, value):
+        """Point Update for newly added prices"""
+        if start == end:
+            self.tree_min[node] = value
+            self.tree_max[node] = value
+        else:
+            mid = (start + end) // 2
+            if index <= mid:
+                self._update(2 * node + 1, start, mid, index, value)
+            else:
+                self._update(2 * node + 2, mid + 1, end, index, value)
+            self.tree_min[node] = min(self.tree_min[2 * node + 1], self.tree_min[2 * node + 2])
+            self.tree_max[node] = max(self.tree_max[2 * node + 1], self.tree_max[2 * node + 2])
+
+    def query_min(self, L, R):
+        """Public function to return minimum value in range [L, R]"""
+        return self._query_min(0, 0, self.n - 1, L, R)
+
+    def query_max(self, L, R):
+        """Public function to return maximum value in range [L, R]"""
+        return self._query_max(0, 0, self.n - 1, L, R)
+
+    def update(self, value):
+        """Dynamically append new price & rebuild tree"""
+        self.arr.append(value)
+        self.n += 1
+        self.tree_min = np.full(4 * self.n, float('inf'))
+        self.tree_max = np.full(4 * self.n, float('-inf'))
+        self._build(0, 0, self.n - 1)
+
+# Read input
+def run_system():
+    print("Enter N (initial prices count) and Q (queries count):")
+    n, q = map(int, input().split())
+    print(f"Enter {n} stock prices:")
+    prices = list(map(int, input().split()))
+
+    seg_tree = SegmentTree(prices)
+
+    print("Enter your operations:")
+    for _ in range(q):
+        command = input().strip().split()
+        if command[0] == "U":
+            x = int(command[1])
+            seg_tree.update(x)
+            print(f"Updated: Added {x}")
+        elif command[0] == "Q":
+            l, r = map(int, command[1:])
+            print(f"Support Level (Min in {l}-{r}): {seg_tree.query_min(l, r)}")
+        elif command[0] == "M":
+            l, r = map(int, command[1:])
+            print(f"Resistance Level (Max in {l}-{r}): {seg_tree.query_max(l, r)}")
+
+# Run in Google Colab
+run_system()
